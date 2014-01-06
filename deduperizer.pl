@@ -3,22 +3,26 @@
 use v5.10;
 use warnings;
 use Getopt::Long;
+use constant;
 
 BEGIN {
+  my $debug = 0;
+  my $human = 0;
+  my $progress = 0;
+  my $quick = 1;
+
   GetOptions (
-    debug    => \(my $debug = 0),
-    human    => \(my $human = 0),
-    progress => \(my $progress = 0),
-    quick    => \(my $quick = 1),
-  )
+    debug    => \$debug,
+    human    => \$human,
+    progress => \$progress,
+    quick    => \$quick,
+  );
 
-  use constant {
-    DEBUG => $debug,
-    HUMAN => $human,
-    PROGRESS => $progress,
-  };
+  constant->import( DEBUG => $debug );
+  constant->import( HUMAN => $human );
+  constant->import( QUICK => $quick );
 
-  use constant PROGRESS => $progress ? eval <<'  END' : 0;
+  constant->import( PROGRESS => $progress ? eval <<'  END' : 0 );
     use Progress::Any;
     use Progress::Any::Output;
     Progress::Any::Output->set('TermProgressBarColor');
