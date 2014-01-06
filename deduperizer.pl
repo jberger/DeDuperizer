@@ -9,7 +9,7 @@ BEGIN {
   my $debug = 0;
   my $human = 0;
   my $progress = 0;
-  my $quick = 1;
+  my $quick = 0;
 
   GetOptions (
     debug    => \$debug,
@@ -30,11 +30,9 @@ BEGIN {
   END
 }
 
-use DDP;
 use File::Next;
 use File::Map 'map_file';
 use Digest::xxHash 'xxhash';
-use List::Util 'first';
 
 sub get_files_by_inode {
   my $target = shift;
@@ -53,7 +51,6 @@ sub get_files_by_inode {
 
   return \%inodes;
 }
-
 
 sub group_files_by_size {
   my $files = shift || [];
@@ -132,7 +129,9 @@ my @candidates =
   values %candidates;
 
 if (HUMAN) {
-  p @candidates;
+  require Data::Printer;
+  Data::Printer::p( @candidates );
+  say 'Total sets ' . @candidates;
   my $num;
   $num += scalar @$_ for @candidates;
   say "Total files: $num";
