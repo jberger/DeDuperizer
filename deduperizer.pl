@@ -1,13 +1,12 @@
 #!/usr/bin/env perl
 
-use v5.18;
+use v5.10;
 use warnings;
 
 use constant DEBUG => $ENV{DEDUP_DEBUG};
 use constant QUICK => $ENV{DEDUP_QUICK} // 1;
 BEGIN { $ENV{DEDUP_PROGRESS} //= not QUICK }
 
-$|++;
 use DDP;
 use File::Next;
 use File::Map 'map_file';
@@ -21,38 +20,43 @@ Progress::Any::Output->set('TermProgressBarColor');
 1;
 END
 
-my $target = shift || '/dedup';
-my @inodes;
+sub get_files_by_inode {
+  my $target = shift;
+  my $opts = shift || { 
+    follow_symlinks => 0,
+    error_handler => sub { CORE::warn @_ },
+  };
 
-my $opts = { 
-  follow_symlinks => 0,
-  error_handler => sub { CORE::warn @_ },
-};
-my $iter = File::Next::files($opts, $target);
+  my $iter = File::Next::files($opts, $target);
 
-say 'Checking sizes' if DEBUG;
-
-my %sizes;
-while ( defined ( my $file = $iter->() ) ) {
-  my ($inode, $nlinks) = (lstat $file)[1,3];
-  if ($nlinks and $nlinks > 1) {
-    next if first { $_ == $inode } @inodes;
-    push @inodes, $inode;
+  my %inodes;
+  while ( defined ( my $file = $iter->() ) ) {
+    my $inode = (lstat $file)[1];
+    push @{ $inodes{$inode} }, $file;
   }
-  push @{ $sizes{-s $file} }, $file;
+
+  return \%inodes;
 }
 
-say 'Checking file contents' if DEBUG;
 
-sub myhash {
+sub group_files_by_size {
+  my $files = shift || [];
+  my %sizes;
+  foreach my $file (@$files) {
+    push @{ $sizes{-s $file} }, $file;
+  }
+  return \%sizes;
+}
+
+sub hash_file {
   my $file = shift;
   map_file my $map, $file, '<';
   my $hash = xxhash($map, 0);
-  say "Hashed: $file ==> $hash" if DEBUG;
+  warn "Hashed: $file ==> $hash\n" if DEBUG;
   return $hash;
 }
 
-sub montecarlo {
+sub montecarlo_file {
   my ($file, $size) = @_;
   map_file my $map, $file, '<';
 
@@ -64,26 +68,39 @@ sub montecarlo {
 
   my $mc;
   $mc .= substr $map, $_, $l for @points;
-  say "Monte Carlo: $file ==> $mc" if DEBUG;
+  warn "Monte Carlo: $file ==> $mc\n" if DEBUG;
   return $mc;
 }
+
+my $target = shift || '/dedup';
+
+my $sizes = do {
+  warn "Getting unique inodes\n" if DEBUG;
+  my $inode_files = get_files_by_inode($target);
+  my @files = map { (sort @$_)[0] } values %$inode_files;
+
+  warn "Checking sizes\n" if DEBUG;
+  group_files_by_size(\@files);
+};
+
+warn "Checking file contents\n" if DEBUG;
 
 my $progress;
 if (PROGRESS) {
   my $njobs;
-  $njobs += scalar @$_ for values %sizes;
+  $njobs += scalar @$_ for values %$sizes;
   $progress = Progress::Any->get_indicator(target => $njobs);
 }
 
 my %candidates;
-foreach my $size (keys %sizes) {
-  my $files = $sizes{$size};
+foreach my $size (keys %$sizes) {
+  my $files = $sizes->{$size};
   next unless @$files > 1;
 
   for my $file (@$files) {
-    my $hash = eval { QUICK ? montecarlo($file, $size) : myhash($file, $size) };
+    my $hash = eval { QUICK ? montecarlo_file($file, $size) : hash_file($file, $size) };
     warn $@ if $@;
-    say "Stored: $file ==> $hash" if DEBUG;
+    warn "Stored: $file ==> $hash\n" if DEBUG;
     push @{ $candidates{"$size-$hash"} }, $file;
     $progress->update if PROGRESS;
   }
@@ -91,10 +108,21 @@ foreach my $size (keys %sizes) {
 
 $progress->finish if PROGRESS;
 
-my @candidates = grep { @$_ > 1 } values %candidates;
-p @candidates;
+warn "Formatting output\n" if DEBUG;
+my @candidates = 
+  sort { $a->[0] cmp $b->[0] } 
+  map  { [ sort @$_ ] }
+  grep { @$_ > 1 } 
+  values %candidates;
 
-my $num;
-$num += scalar @$_ for @candidates;
-say "Total files: $num";
+if ($ENV{DEDUP_HUMAN}) {
+  p @candidates;
+  my $num;
+  $num += scalar @$_ for @candidates;
+  say "Total files: $num";
+} else {
+  local $, = "\t";
+  say @$_ for @candidates;
+}
+
 
