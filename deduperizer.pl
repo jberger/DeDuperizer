@@ -2,23 +2,35 @@
 
 use v5.10;
 use warnings;
+use Getopt::Long;
 
-use constant DEBUG => $ENV{DEDUP_DEBUG};
-use constant QUICK => $ENV{DEDUP_QUICK} // 1;
-BEGIN { $ENV{DEDUP_PROGRESS} //= not QUICK }
+BEGIN {
+  GetOptions (
+    debug    => \(my $debug = 0),
+    human    => \(my $human = 0),
+    progress => \(my $progress = 0),
+    quick    => \(my $quick = 1),
+  )
+
+  use constant {
+    DEBUG => $debug,
+    HUMAN => $human,
+    PROGRESS => $progress,
+  };
+
+  use constant PROGRESS => $progress ? eval <<'  END' : 0;
+    use Progress::Any;
+    use Progress::Any::Output;
+    Progress::Any::Output->set('TermProgressBarColor');
+    1;
+  END
+}
 
 use DDP;
 use File::Next;
 use File::Map 'map_file';
 use Digest::xxHash 'xxhash';
 use List::Util 'first';
-
-use constant PROGRESS => $ENV{DEDUP_PROGRESS} ? eval <<'END' : 0;
-use Progress::Any;
-use Progress::Any::Output;
-Progress::Any::Output->set('TermProgressBarColor');
-1;
-END
 
 sub get_files_by_inode {
   my $target = shift;
@@ -115,7 +127,7 @@ my @candidates =
   grep { @$_ > 1 } 
   values %candidates;
 
-if ($ENV{DEDUP_HUMAN}) {
+if (HUMAN) {
   p @candidates;
   my $num;
   $num += scalar @$_ for @candidates;
