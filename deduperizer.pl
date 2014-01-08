@@ -6,19 +6,16 @@ use Getopt::Long;
 use constant;
 
 BEGIN {
-  my $debug = 0;
-  my $human = 0;
-  my $progress = 0;
-  my $quick = 0;
-
   GetOptions (
-    debug    => \$debug,
-    human    => \$human,
-    progress => \$progress,
-    quick    => \$quick,
+    debug    => \(my $debug    = 0),
+    help     => \(my $help     = 0),
+    human    => \(my $human    = 0),
+    progress => \(my $progress = 0),
+    quick    => \(my $quick    = 0),
   );
 
   constant->import( DEBUG => $debug );
+  constant->import( HELP  => $help  );
   constant->import( HUMAN => $human );
   constant->import( QUICK => $quick );
 
@@ -87,7 +84,25 @@ sub montecarlo_file {
   return $mc;
 }
 
-my $target = shift || '/dedup';
+sub usage {
+  my $state = shift;
+  print <<"END";
+Usage: $0 [options] directory
+Find all the duplicate files in a directory (including sub-paths).
+
+Options:
+--debug     Print extra information while processing
+--help      Print this information and exit
+--human     Dump the information using Data::Printer
+--progress  Show a progress bar while processing
+--quick     Use a faster heuristic, may have false positives
+END
+
+  exit $state || 0;
+}
+
+usage(0) if HELP;
+my $target = shift || usage(1);
 
 my $sizes = do {
   warn "Getting unique inodes\n" if DEBUG;
