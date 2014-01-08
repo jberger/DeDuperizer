@@ -62,7 +62,8 @@ sub group_files_by_size {
 }
 
 sub hash_file {
-  my $file = shift;
+  my ($file, $size) = @_;
+  return '' unless $size;
   map_file my $map, $file, '<';
   my $hash = xxhash($map, 0);
   warn "Hashed: $file ==> $hash\n" if DEBUG;
@@ -71,6 +72,7 @@ sub hash_file {
 
 sub montecarlo_file {
   my ($file, $size) = @_;
+  return '' unless $size;
   map_file my $map, $file, '<';
 
   my $l = 20;
